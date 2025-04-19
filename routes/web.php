@@ -1,55 +1,108 @@
 <?php
 
+use App\Models\Company;
+use App\Models\MonthlyData;
+use App\Models\Metric;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
-// Simple companies data endpoint with CORS headers
+// Enhanced companies endpoint with database integration
 Route::get('/companies', function () {
-    // Add CORS headers directly
+    // Get all companies
+    $companies = Company::all();
+    
+    // Get all monthly data
+    $monthlyDataRaw = MonthlyData::all()->groupBy('month');
+    
+    // Format monthly data into the expected structure
+    $monthlyData = [];
+    foreach ($monthlyDataRaw as $month => $entries) {
+        $monthData = ['month' => $month];
+        
+        foreach ($entries as $entry) {
+            $companyName = $entry->company->name;
+            $monthData[$companyName] = $entry->revenue;
+        }
+        
+        $monthlyData[] = $monthData;
+    }
+    
+    // Get metrics
+    $metrics = Metric::first();
+    
     return response()->json([
-        'companies' => [
-            ['id' => 1, 'name' => 'Ubona'],
-            ['id' => 2, 'name' => 'WolfX'],
-            ['id' => 3, 'name' => 'LyondellBasell']
-        ],
-        'monthlyData' => [
-            [
-                'month' => 'Jan 2025',
-                'Ubona' => 45000,
-                'WolfX' => 38000,
-                'LyondellBasell' => 52000
-            ],
-            [
-                'month' => 'Feb 2025',
-                'Ubona' => 48000,
-                'WolfX' => 41000,
-                'LyondellBasell' => 55000
-            ],
-            [
-                'month' => 'Mar 2025',
-                'Ubona' => 52000,
-                'WolfX' => 43000,
-                'LyondellBasell' => 58000
-            ],
-            [
-                'month' => 'Apr 2025',
-                'Ubona' => 56000,
-                'WolfX' => 46000,
-                'LyondellBasell' => 62000
-            ]
-        ],
+        'companies' => $companies->map(function($company) {
+            return [
+                'id' => $company->id,
+                'name' => $company->name
+            ];
+        }),
+        'monthlyData' => $monthlyData,
         'metrics' => [
-            'totalRevenue' => 164000,
-            'revenueGrowth' => 7.4,
-            'averageTransaction' => 1250,
-            'transactionGrowth' => 8.2,
-            'totalCustomers' => 3200,
-            'customerGrowth' => 12.5
+            'totalRevenue' => $metrics->total_revenue,
+            'revenueGrowth' => $metrics->revenue_growth,
+            'averageTransaction' => $metrics->average_transaction,
+            'transactionGrowth' => $metrics->transaction_growth,
+            'totalCustomers' => $metrics->total_customers,
+            'customerGrowth' => $metrics->customer_growth
         ]
     ])->header('Access-Control-Allow-Origin', '*')
       ->header('Access-Control-Allow-Methods', 'GET')
       ->header('Access-Control-Allow-Headers', 'Content-Type');
+});
+
+// New endpoints for more complex operations
+Route::get('/companies/{company}', function (Company $company) {
+    return response()->json([
+        'company' => [
+            'id' => $company->id,
+            'name' => $company->name
+        ],
+        'monthlyData' => $company->monthlyData->map(function($data) {
+            return [
+                'month' => $data->month,
+                'revenue' => $data->revenue
+            ];
+        })
+    ])->header('Access-Control-Allow-Origin', '*');
+});
+
+// Endpoint to get metrics
+Route::get('/metrics', function () {
+    $metrics = Metric::first();
+    
+    return response()->json([
+        'metrics' => [
+            'totalRevenue' => $metrics->total_revenue,
+            'revenueGrowth' => $metrics->revenue_growth,
+            'averageTransaction' => $metrics->average_transaction,
+            'transactionGrowth' => $metrics->transaction_growth,
+            'totalCustomers' => $metrics->total_customers,
+            'customerGrowth' => $metrics->customer_growth
+        ]
+    ])->header('Access-Control-Allow-Origin', '*');
+});
+
+// Endpoint to get monthly data
+Route::get('/monthly-data', function () {
+    $months = MonthlyData::select('month')->distinct()->get()->pluck('month');
+    $monthlyData = [];
+    
+    foreach ($months as $month) {
+        $monthData = ['month' => $month];
+        $entries = MonthlyData::where('month', $month)->with('company')->get();
+        
+        foreach ($entries as $entry) {
+            $monthData[$entry->company->name] = $entry->revenue;
+        }
+        
+        $monthlyData[] = $monthData;
+    }
+    
+    return response()->json([
+        'monthlyData' => $monthlyData
+    ])->header('Access-Control-Allow-Origin', '*');
 });
